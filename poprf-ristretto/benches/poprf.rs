@@ -9,7 +9,7 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use rand_core::OsRng;
 
-use poprf_ristretto::{BlindedElement, PoprfBlindState, PoprfClient, PoprfServer};
+use poprf_ristretto::{BlindedElement, PoprfBlindState, PoprfClient, PoprfInputTable, PoprfServer};
 
 const INPUT: &[u8] = b"poprf-bench-input---32-bytes----";
 const INFO: &[u8] = b"benchmark-info";
@@ -67,6 +67,43 @@ fn bench_poprf(c: &mut Criterion) {
     g.bench_function("evaluate", |b| {
         b.iter(|| server.evaluate(INPUT, INFO).unwrap());
     });
+
+    // Batched offline evaluation over pre-hashed inputs: table built once
+    // outside the timed loop (amortised by construction), one fresh `info`
+    // per iteration so `t`/inversion work is not memoisable.
+    {
+        let table = PoprfInputTable::new(INPUT).unwrap();
+        let batch: Vec<&PoprfInputTable> = (0..32).map(|_| &table).collect();
+        let mut info_counter = 0u32;
+        g.bench_function("evaluate_tables/n=1", |b| {
+            b.iter_batched(
+                || {
+                    info_counter += 1;
+                    format!("bench-info-{info_counter}")
+                },
+                |info| {
+                    server
+                        .evaluate_tables(&batch[..1], info.as_bytes())
+                        .unwrap()
+                },
+                BatchSize::SmallInput,
+            );
+        });
+        g.bench_function("evaluate_tables/n=32", |b| {
+            b.iter_batched(
+                || {
+                    info_counter += 1;
+                    format!("bench-info-{info_counter}")
+                },
+                |info| {
+                    server
+                        .evaluate_tables(&batch[..32], info.as_bytes())
+                        .unwrap()
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
 
     for &n in BATCH_SIZES {
         let sample_size = match n {

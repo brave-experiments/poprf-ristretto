@@ -38,6 +38,10 @@ assert_eq!(output, server.evaluate(input, info).unwrap());
 
 For the batched API (one DLEQ proof over `N` tokens), see
 `PoprfServer::blind_evaluate_batch` and `PoprfClient::finalize_batch`.
+For repeated offline evaluation of the same inputs under many `info`
+values, pre-hash each input once into a `PoprfInputTable` and use
+`PoprfServer::evaluate_tables` — byte-identical to `evaluate`, with
+one hash-to-scalar and inversion shared per batch.
 
 A runnable example is at
 [`examples/poprf_handshake.rs`](./examples/poprf_handshake.rs):

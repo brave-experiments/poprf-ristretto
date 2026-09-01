@@ -7,8 +7,8 @@
 use rand_core::OsRng;
 
 use poprf_ristretto::{
-    BlindedElement, Error, EvaluatedElement, PoprfClient, PoprfServer, Proof, PublicKey, SecretKey,
-    derive_key_pair,
+    BlindedElement, Error, EvaluatedElement, PoprfClient, PoprfInputTable, PoprfServer, Proof,
+    PublicKey, SecretKey, derive_key_pair,
 };
 
 // ── §2.1 DeserializeElement / DeserializeScalar ──────────────────────────────
@@ -475,6 +475,26 @@ fn rejects_oversized_input_and_info() {
         server.evaluate(b"x", &too_long).unwrap_err(),
         Error::InputTooLong,
         "evaluate: oversized info not rejected"
+    );
+
+    // PoprfInputTable::new rejects oversized input before any curve work.
+    assert_eq!(
+        PoprfInputTable::new(&too_long).unwrap_err(),
+        Error::InputTooLong,
+        "PoprfInputTable::new: oversized input not rejected"
+    );
+    // evaluate_tables: oversized info (input cap enforced at table build).
+    let ok_table = PoprfInputTable::new(b"x").unwrap();
+    assert_eq!(
+        server.evaluate_tables(&[&ok_table], &too_long).unwrap_err(),
+        Error::InputTooLong,
+        "evaluate_tables: oversized info not rejected"
+    );
+    // evaluate_tables: empty batch, same contract as blind_evaluate_batch.
+    assert_eq!(
+        server.evaluate_tables(&[], b"info").unwrap_err(),
+        Error::LengthMismatch,
+        "evaluate_tables: empty batch not rejected"
     );
 
     // DeriveKeyPair: oversized info.

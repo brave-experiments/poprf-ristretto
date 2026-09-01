@@ -49,12 +49,16 @@
 //! | [`PoprfBlindState`]  | 64 (`Ns + Ne`) | client-internal  |
 //! | [`PoprfOutput`]      | 64 (`Nh`)   | client / server  |
 //!
+//! ([`PoprfInputTable`] is a server-side pre-hashing handle, not a wire
+//! type; it has no byte serialization.)
+//!
 //! ## Security
 //!
 //! * **Constant-time discipline.** [`PoprfClient::finalize`],
 //!   [`PoprfClient::finalize_batch`], [`PoprfServer::blind_evaluate`],
-//!   [`PoprfServer::blind_evaluate_batch`], and [`PoprfServer::evaluate`]
-//!   are constant-time in every secret scalar: `skS`, the client `blind`,
+//!   [`PoprfServer::blind_evaluate_batch`], [`PoprfServer::evaluate`], and
+//!   [`PoprfServer::evaluate_tables`] are constant-time in every secret
+//!   scalar: `skS`, the client `blind`,
 //!   the DLEQ proof nonce `r`, and the per-`info` evaluation scalar
 //!   `t = skS + m`. The test-vector siblings
 //!   ([`PoprfClient::blind_with_scalar`],
@@ -124,7 +128,8 @@ pub use dleq::Proof;
 pub use error::Error;
 pub use key::{PublicKey, SecretKey, derive_key_pair, generate_key_pair};
 pub use poprf::{
-    BlindedElement, EvaluatedElement, PoprfBlindState, PoprfClient, PoprfOutput, PoprfServer,
+    BlindedElement, EvaluatedElement, PoprfBlindState, PoprfClient, PoprfInputTable, PoprfOutput,
+    PoprfServer,
 };
 
 /// Mode identifier for POPRF (RFC 9497 §3.1).

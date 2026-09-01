@@ -7,6 +7,8 @@
 use alloc::vec::Vec;
 
 use curve25519_dalek::constants::RISTRETTO_BASEPOINT_POINT;
+#[cfg(feature = "precomputed-tables")]
+use curve25519_dalek::ristretto::RistrettoBasepointTable;
 use curve25519_dalek::ristretto::{CompressedRistretto, RistrettoPoint};
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::Identity;
@@ -42,6 +44,45 @@ pub(crate) fn scalar_mul(scalar: &Scalar, element: &RistrettoPoint) -> Ristretto
 #[inline]
 pub(crate) fn scalar_mul_gen(scalar: &Scalar) -> RistrettoPoint {
     scalar * RISTRETTO_BASEPOINT_POINT
+}
+
+/// Representation of a caller-supplied base point for repeated
+/// fixed-base multiplication by unrelated scalars (see
+/// `PoprfInputTable`). Under `precomputed-tables` this is a windowed
+/// table of multiples (constant-time select per digit, amortised
+/// build); without it, the bare point (falls back to variable-base).
+#[cfg(feature = "precomputed-tables")]
+pub(crate) type FixedBase = RistrettoBasepointTable;
+
+/// Precompute multiples of `p` for repeated `scalar * p`.
+#[cfg(feature = "precomputed-tables")]
+#[inline]
+pub(crate) fn fixed_base(p: &RistrettoPoint) -> FixedBase {
+    RistrettoBasepointTable::create(p)
+}
+
+/// `scalar * base` where `base` came from [`fixed_base`].
+///
+/// Constant-time in `scalar` on both code paths.
+#[cfg(feature = "precomputed-tables")]
+#[inline]
+pub(crate) fn scalar_mul_fixed(scalar: &Scalar, base: &FixedBase) -> RistrettoPoint {
+    scalar * base
+}
+
+#[cfg(not(feature = "precomputed-tables"))]
+pub(crate) type FixedBase = RistrettoPoint;
+
+#[cfg(not(feature = "precomputed-tables"))]
+#[inline]
+pub(crate) fn fixed_base(p: &RistrettoPoint) -> FixedBase {
+    *p
+}
+
+#[cfg(not(feature = "precomputed-tables"))]
+#[inline]
+pub(crate) fn scalar_mul_fixed(scalar: &Scalar, base: &FixedBase) -> RistrettoPoint {
+    scalar * base
 }
 
 #[inline]

@@ -3,8 +3,8 @@
 use rand_core::OsRng;
 
 use poprf_ristretto::{
-    BlindedElement, Error, EvaluatedElement, PoprfBlindState, PoprfClient, PoprfOutput,
-    PoprfServer, Proof, PublicKey, SecretKey,
+    BlindedElement, Error, EvaluatedElement, PoprfBlindState, PoprfClient, PoprfInputTable,
+    PoprfOutput, PoprfServer, Proof, PublicKey, SecretKey,
 };
 
 #[test]
@@ -59,6 +59,97 @@ fn poprf_different_info_yields_different_output() {
     let a = server.evaluate(b"x", b"info1").unwrap();
     let b = server.evaluate(b"x", b"info2").unwrap();
     assert_ne!(a, b);
+}
+
+// ── batched offline evaluation over pre-hashed inputs ────────────────────────
+
+/// `evaluate_tables` must equal per-call `evaluate` term-for-term:
+/// same inputs (repeated and reordered), same key, many `info` values.
+#[test]
+fn poprf_evaluate_tables_matches_evaluate() {
+    let server = PoprfServer::generate(&mut OsRng);
+
+    let inputs: &[&[u8]] = &[b"alpha", b"beta", b"gamma", b"", b"delta"];
+    let tables: Vec<_> = inputs
+        .iter()
+        .map(|i| PoprfInputTable::new(i).unwrap())
+        .collect();
+    let refs: Vec<&PoprfInputTable> = tables.iter().collect();
+
+    let infos: &[&[u8]] = &[b"batch-info", b"", b"another-info"];
+    for info in infos {
+        let expected: Vec<_> = inputs
+            .iter()
+            .map(|i| server.evaluate(i, info).unwrap())
+            .collect();
+        let got = server.evaluate_tables(&refs, info).unwrap();
+        assert_eq!(
+            got, expected,
+            "evaluate_tables != evaluate for info={info:?}"
+        );
+    }
+
+    // Repetition and reordering must not change any output.
+    let shuffled: Vec<&PoprfInputTable> = vec![&refs[3], &refs[0], &refs[0], &refs[2]];
+    let got = server.evaluate_tables(&shuffled, b"batch-info").unwrap();
+    let expect0 = server.evaluate(b"alpha", b"batch-info").unwrap();
+    let expect2 = server.evaluate(b"gamma", b"batch-info").unwrap();
+    let expect3 = server.evaluate(b"", b"batch-info").unwrap();
+    assert_eq!(
+        got,
+        vec![expect3, expect0.clone(), expect0, expect2],
+        "repeated/reordered batch diverges"
+    );
+}
+
+/// Table reuse across many `info` values (the issuance pattern the API
+/// exists for) must keep agreeing with `evaluate`.
+#[test]
+fn poprf_input_table_reuse_across_infos() {
+    let server = PoprfServer::generate(&mut OsRng);
+    let table = PoprfInputTable::new(b"fixed-input").unwrap();
+    let batch: Vec<&PoprfInputTable> = vec![&table, &table];
+
+    for i in 0..64u32 {
+        let info = format!("info-{i}");
+        let got = server.evaluate_tables(&batch, info.as_bytes()).unwrap();
+        let expected = server.evaluate(b"fixed-input", info.as_bytes()).unwrap();
+        assert_eq!(got, vec![expected.clone(), expected], "divergence at {i}");
+    }
+}
+
+/// A client blinded round-trip must land on the same output the server
+/// produces through `evaluate_tables` — the mint path and the click path
+/// must agree.
+#[test]
+fn poprf_evaluate_tables_agrees_with_blinded_finalize() {
+    let server = PoprfServer::generate(&mut OsRng);
+    let client = PoprfClient::new(server.public_key());
+
+    let inputs: &[&[u8]] = &[b"tok-0", b"tok-1", b"tok-2"];
+    let info = b"urlkey-info";
+
+    let mut states = Vec::new();
+    let mut blindeds = Vec::new();
+    for &inp in inputs {
+        let (s, b) = client.blind(inp, info, &mut OsRng).unwrap();
+        states.push(s);
+        blindeds.push(b);
+    }
+    let (evals, proof) = server
+        .blind_evaluate_batch(&mut OsRng, &blindeds, info)
+        .unwrap();
+    let outputs = client
+        .finalize_batch(inputs, &states, &evals, &blindeds, &proof, info)
+        .unwrap();
+
+    let tables: Vec<_> = inputs
+        .iter()
+        .map(|i| PoprfInputTable::new(i).unwrap())
+        .collect();
+    let refs: Vec<&PoprfInputTable> = tables.iter().collect();
+    let direct = server.evaluate_tables(&refs, info).unwrap();
+    assert_eq!(outputs, direct, "evaluate_tables != blinded finalize");
 }
 
 #[test]
